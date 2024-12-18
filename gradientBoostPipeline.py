@@ -5,11 +5,11 @@ import nltk
 import re
 import textstat
 
-import matplotlib
-import matplotlib.pyplot as plt
-
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+
+import matplotlib
+import matplotlib.pyplot as plt
 
 from sklearn import ensemble
 from sklearn.pipeline import Pipeline
@@ -168,7 +168,11 @@ test_score = pipeline.score(X_test, y_test)
 print(f"Train score: {train_score}")
 print(f"Test score: {test_score}")
 
-X_trainBayes, X_testBayes, y_trainBayes, y_testBayes = train_test_split(X_train_combined, train_scores, test_size=0.1, random_state=13)
+
+### BAYESIAN OPTIMIZATION ###
+X_trainBayes, X_testBayes, y_trainBayes, y_testBayes = train_test_split(
+    X, y, test_size=0.1, random_state=13
+)
 
 params = {
     "n_estimators": 500,
@@ -183,6 +187,7 @@ reg.fit(X_train, y_train)
 
 mse = mean_squared_error(y_test, reg.predict(X_test))
 print("The mean squared error (MSE) on test set: {:.4f}".format(mse))
+
 
 test_score = np.zeros((params["n_estimators"],), dtype=np.float64)
 for i, y_pred in enumerate(reg.staged_predict(X_test)):
