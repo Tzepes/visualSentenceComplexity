@@ -4,50 +4,73 @@ import pandas as pd
 import nltk
 import re
 import textstat
+import seaborn as sns
+from scipy.stats import spearmanr
 
-from nltk.corpus import stopwords
+from nltk.corpus import stopwords, wordnet as wn
 from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk import pos_tag, Tree
+from nltk.corpus import brown
+from nltk.tokenize import word_tokenize
+from nltk import pos_tag
+import numpy as np
 
 import matplotlib
 import matplotlib.pyplot as plt
 
-from sklearn import ensemble
+from sklearn import ensemble, linear_model
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import FunctionTransformer, StandardScaler
+from sklearn.preprocessing import FunctionTransformer, StandardScaler, MinMaxScaler
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from sklearn.feature_extraction.text import CountVectorizer
+
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+
+from corpus_data.colors_corpus import color_words
+from corpus_data.wordsOfNums_corpus import words_of_numbers
+from corpus_data.prepositions_corpus import prepositions
 
 train_df = pd.read_csv("./data/train.csv")
 test_df = pd.read_csv("./data/test.csv")
 val_df = pd.read_csv("./data/val.csv")
 
-nltk.download('punkt_tab')
+
+# nltk.download('punkt_tab')
+# nltk.download("stopwords")
+# nltk.download('punkt')
+# nltk.download('averaged_perceptron_tagger')
+# nltk.download('brown')
+# nltk.download('wordnet')
+# nltk.download('averaged_perceptron_tagger_eng')
+
+stop_words = set(stopwords.words('english'))
 
 lemmatizer = WordNetLemmatizer()
 
 def sentence_preprocessing(sentence):
-    
-    # Lower case text
     sentence = sentence.lower()
-    # Remove special characters
-    sentence = re.sub(r'[^a-z]', ' ', sentence)
-    # Tokenize the sentence
+    sentence = re.sub('[^a-zA-Z]', ' ', sentence)
     words = nltk.word_tokenize(sentence)
-    # Remove stopwords
     words = [word for word in words if word not in stopwords.words("english")]
-    # Lemmatize the words
-    lemmatizer = WordNetLemmatizer()
     words = [lemmatizer.lemmatize(word) for word in words]
     return " ".join(words)
+
+minMaxScaler = MinMaxScaler(feature_range=(0, 1))
 
 
 # Extract the columns into lists
 train_ids = train_df.iloc[:, 0].tolist()
 train_sentences = train_df.iloc[:, 1].tolist()
 train_scores = train_df.iloc[:, -1].tolist()  
+train_scoresScaled = minMaxScaler.fit_transform(np.array(train_scores).reshape(-1, 1))
+train_scoresNormalized = np.log1p(train_scoresScaled)
 
 test_ids = test_df.iloc[:, 0].tolist()
 test_sentences = test_df.iloc[:, 1].tolist()
@@ -59,154 +82,171 @@ valid_scores = val_df.iloc[:, -1].tolist()
 # Clean the sentences
 train_sentences_clean = [sentence_preprocessing(sentence) for sentence in train_sentences]
 test_sentences_clean = [sentence_preprocessing(sentence) for sentence in test_sentences]
+validation_sentences_clean = [sentence_preprocessing(sentence) for sentence in valid_sentences]
 
 train_ids_df = pd.DataFrame(train_ids, columns=['train_ids'])
 train_sentences_df = pd.DataFrame(train_sentences_clean, columns=['train_sentences'])
 train_scores_df = pd.DataFrame(train_scores, columns=['train_scores'])
 
-test_ids_df = pd.DataFrame(test_ids, columns=['test_ids'])
-test_sentences_df = pd.DataFrame(test_sentences_clean, columns=['test_sentences'])
+valid_ids_df = pd.DataFrame(valid_ids, columns=['valid_ids'])
+valid_sentences_df = pd.DataFrame(validation_sentences_clean, columns=['valid_sentences'])
+
+brown_words = brown.words()
+brown_freq_dist = nltk.FreqDist(brown_words)
+total_brown_words = len(brown_words)
+stop_words = set(stopwords.words('english'))
+
+def get_word_rarity(sentences):
+    word_rarity = []
+    for sentence in sentences:
+        sentence_rarity = []
+        for word in word_tokenize(sentence):
+            if word.isalpha() and word.lower() not in stop_words:
+                sentence_rarity.append(-np.log((brown_freq_dist[word.lower()] + 1) / total_brown_words))
+        word_rarity.append(np.mean(sentence_rarity) if sentence_rarity else 0)
+    return np.array(word_rarity).reshape(-1, 1)
 
 
-# Print the extracted data (optional)
-print(train_ids_df.head())
-print(train_sentences_df.head())
-print(train_scores_df.head())
-print(test_ids_df.head())
-print(test_sentences_df.head())
+def get_adjective_count(sentences):
+    adjective_count = []  
+    for sentence in sentences:
+        count = 0
+        for word in word_tokenize(sentence):
+            if any(synset.pos() == 'a' for synset in wn.synsets(word)):
+                print(word)
+                count += 1
+        adjective_count.append(count)
+        print(sentence, count)
+    return np.array(adjective_count).reshape(-1, 1)
 
 
-# Features
-def get_word_count(text):
-    return np.array([len(sentence.split()) for sentence in text]).reshape(-1, 1)
+def get_parse_tree_depth(sentences):
+    tree_depth = []
+    for sentence in sentences:
+        tree = Tree.fromstring(sentence)
+        tree_depth.append(tree.height())
+    return np.array(tree_depth).reshape(-1, 1)
 
-def get_char_count(text):
-    return np.array([len(sentence) for sentence in text]).reshape(-1, 1)
+def get_color_count(sentences):
+    colors_count = []
+    for sentence in sentences:
+        count = 0
+        for word in word_tokenize(sentence):
+            if word in color_words:
+                count += 1
+        colors_count.append(count)
+    return np.array(colors_count).reshape(-1, 1)
 
-def get_avg_word_length(text):
-    return np.array([np.mean([len(word) for word in sentence.split()]) for sentence in text]).reshape(-1, 1)
+def get_prepositions_count(sentences):
+    prepositions_count = []
+    for sentence in sentences:
+        count = 0
+        for word in word_tokenize(sentence):
+            if word in prepositions:
+                count += 1
+        prepositions_count.append(count)
+    return np.array(prepositions_count).reshape(-1, 1)
 
-def get_lemma_count(text):
-    return np.array([len(set(sentence.split())) for sentence in text]).reshape(-1, 1)
 
-def get_syllable_count(text):
-    return np.array([textstat.syllable_count(sentence) for sentence in text]).reshape(-1, 1)
-
-# Combine features
 X_train_features = np.hstack([
-    get_word_count(train_sentences),
-    get_char_count(train_sentences),
-    get_avg_word_length(train_sentences),
-    get_lemma_count(train_sentences),
-    get_syllable_count(train_sentences)
+    get_word_rarity(train_sentences),
+    get_adjective_count(train_sentences),
+    get_color_count(train_sentences),
 ])
 
 X_test_features = np.hstack([
-    get_word_count(test_sentences),
-    get_char_count(test_sentences),
-    get_avg_word_length(test_sentences),
-    get_lemma_count(test_sentences),
-    get_syllable_count(test_sentences)
+    get_word_rarity(test_sentences),
+    get_adjective_count(test_sentences),
+    get_color_count(test_sentences),
 ])
 
-# Create DataFrames for better readability
-train_features_df = pd.DataFrame(X_train_features, columns=[
-    'word_count', 'char_count', 'avg_word_length', 'lemma_count', 'syllable_count'
+X_valid_features = np.hstack([
+    get_word_rarity(valid_sentences),
+    get_adjective_count(valid_sentences),
+    get_color_count(valid_sentences),
 ])
 
-test_features_df = pd.DataFrame(X_test_features, columns=[
-    'word_count', 'char_count', 'avg_word_length', 'lemma_count', 'syllable_count'
+train_features_df = pd.DataFrame(X_train_features, columns=[ 
+    'word_rarity', 'adjective_count', 'color_count'
 ])
 
-# Add the sentences for reference
+test_features_df = pd.DataFrame(X_test_features, columns=[ 
+    'word_rarity', 'adjective_count', 'color_count'
+])
+
+valid_features_df = pd.DataFrame(X_valid_features, columns=[
+    'word_rarity', 'adjective_count', 'color_count'
+])
+
+plotting_of_featuresDF = pd.concat([train_features_df, train_scores_df], axis = 1)
+axis = sns.pairplot(data = plotting_of_featuresDF, plot_kws = dict(color = "maroon"))
+plt.show()
+
+train_features_df['train_scores'] = train_scores
+featureCorrelation = train_features_df.corr()
+sns.heatmap(featureCorrelation, annot = True, cmap = 'Blues', linewidths = 1,
+           annot_kws = {"weight": "bold", "fontsize": 10})
+plt.figure(figsize = (10, 10))
+plt.show()
+
 train_features_df['sentence'] = train_sentences_clean
-test_features_df['sentence'] = test_sentences_clean
+train_features_df['sentence_id'] = train_ids
 
-# Display the table
+test_features_df['sentence'] = test_sentences_clean
+test_features_df['sentence_id'] = test_ids
+
+valid_features_df['sentence'] = validation_sentences_clean
+valid_features_df['sentence_id'] = valid_ids
+
 print("Training Features Table:")
 print(train_features_df.head())
 
-print("\nTesting Features Table:")
-print(test_features_df.head())
+print("\nValidation Features Table:")
+print(valid_features_df.head())
 
-# TfidfVectorizer
-vectorizer = TfidfVectorizer(
-        sublinear_tf=True, max_df=0.5, min_df=5, stop_words="english"
-    )
+vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5, min_df=5, stop_words="english")
 
-# Apply TF-IDF transformation
 X_train_tfidf = vectorizer.fit_transform(train_sentences)
 X_test_tfidf = vectorizer.transform(test_sentences)
+X_valid_tfidf = vectorizer.transform(valid_sentences)
 
 # Convert sparse matrix to DataFrame for visualization
 # tfidf_df = pd.DataFrame(X_train_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
 # Save tfidf_df to a CSV file
 # tfidf_df.to_csv("tfidfData.csv", index=False)
 
-# Combine all features into one matrix
 X_train_combined = np.hstack([X_train_features, X_train_tfidf.toarray()])
 X_test_combined = np.hstack([X_test_features, X_test_tfidf.toarray()])
+X_valid_combined = np.hstack([X_valid_features, X_valid_tfidf.toarray()])
 
 # Create Pipeline
-pipeline = Pipeline(
+GBR_pipeline = Pipeline(
     steps=[
-        ("scaler", StandardScaler(with_mean=False)),  # Scale numerical features
-        ("regressor", GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, max_depth=3, random_state=42)),
+        ("scaler", StandardScaler(with_mean=True)),  # Scale numerical features
+        ("regressor", GradientBoostingRegressor(n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42, verbose=1)),
     ]
 )
 
-# Train-test split
 X_train, X_test, y_train, y_test = train_test_split(X_train_combined, train_scores, test_size=0.2, random_state=42)
 
-# Fit the model
-pipeline.fit(X_train, y_train)
+GBR_pipeline.fit(X_train, y_train)
 
-# Evaluate the model
-train_score = pipeline.score(X_train, y_train)
-test_score = pipeline.score(X_test, y_test)
+train_score = GBR_pipeline.score(X_train, y_train)
+test_score = GBR_pipeline.score(X_test, y_test)
 
 print(f"Train score: {train_score}")
 print(f"Test score: {test_score}")
 
-
-### BAYESIAN OPTIMIZATION ###
-X_trainBayes, X_testBayes, y_trainBayes, y_testBayes = train_test_split(
-    X, y, test_size=0.1, random_state=13
-)
-
-params = {
-    "n_estimators": 500,
-    "max_depth": 4,
-    "min_samples_split": 5,
-    "learning_rate": 0.01,
-    "loss": "squared_error",
-}
-
-reg = ensemble.GradientBoostingRegressor(**params)
-reg.fit(X_train, y_train)
-
-mse = mean_squared_error(y_test, reg.predict(X_test))
-print("The mean squared error (MSE) on test set: {:.4f}".format(mse))
+valid_predictions_GBR = GBR_pipeline.predict(X_valid_combined)
+spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_GBR)
+print(f"Spearman Correlation: {spearman_corr}")
+print(f"P-value: {p_value}")
 
 
-test_score = np.zeros((params["n_estimators"],), dtype=np.float64)
-for i, y_pred in enumerate(reg.staged_predict(X_test)):
-    test_score[i] = mean_squared_error(y_test, y_pred)
+bayesianRidge = linear_model.BayesianRidge(verbose=1)
+bayesianRidge.fit(X_train, y_train)
 
-fig = plt.figure(figsize=(6, 6))
-plt.subplot(1, 1, 1)
-plt.title("Deviance")
-plt.plot(
-    np.arange(params["n_estimators"]) + 1,
-    reg.train_score_,
-    "b-",
-    label="Training Set Deviance",
-)
-plt.plot(
-    np.arange(params["n_estimators"]) + 1, test_score, "r-", label="Test Set Deviance"
-)
-plt.legend(loc="upper right")
-plt.xlabel("Boosting Iterations")
-plt.ylabel("Deviance")
-fig.tight_layout()
-plt.show()
+valid_predictions_bayesian = bayesianRidge.predict(X_valid_combined)
+spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_bayesian)
+print(f"Spearman Correlation: {spearman_corr}")
+print(f"P-value: {p_value}")

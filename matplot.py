@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load tfidf data from the CSV file
-tfidf_df = pd.read_csv("tfidf_data.csv")
+tfidf_df = pd.read_csv("tfidfData.csv")
 
 # Plot all sentences
 plt.figure(figsize=(15, 8))
