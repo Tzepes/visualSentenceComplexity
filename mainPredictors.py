@@ -19,15 +19,13 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-from sklearn import ensemble, linear_model
+from sklearn import linear_model
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import FunctionTransformer, StandardScaler, MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.svm import SVR
+from sklearn.model_selection import train_test_split
 
 import tensorflow as tf
 from tensorflow.keras.models import Sequential
@@ -36,6 +34,7 @@ from tensorflow.keras.layers import Dense, Dropout
 from corpus_data.colors_corpus import color_words
 from corpus_data.wordsOfNums_corpus import words_of_numbers
 from corpus_data.prepositions_corpus import prepositions
+from corpus_data.positioning_corpus import position_words
 
 train_df = pd.read_csv("./data/train.csv")
 test_df = pd.read_csv("./data/test.csv")
@@ -57,20 +56,16 @@ lemmatizer = WordNetLemmatizer()
 def sentence_preprocessing(sentence):
     sentence = sentence.lower()
     sentence = re.sub('[^a-zA-Z]', ' ', sentence)
+
     words = nltk.word_tokenize(sentence)
     words = [word for word in words if word not in stopwords.words("english")]
     words = [lemmatizer.lemmatize(word) for word in words]
+
     return " ".join(words)
 
-minMaxScaler = MinMaxScaler(feature_range=(0, 1))
-
-
-# Extract the columns into lists
 train_ids = train_df.iloc[:, 0].tolist()
 train_sentences = train_df.iloc[:, 1].tolist()
-train_scores = train_df.iloc[:, -1].tolist()  
-train_scoresScaled = minMaxScaler.fit_transform(np.array(train_scores).reshape(-1, 1))
-train_scoresNormalized = np.log1p(train_scoresScaled)
+train_scores = train_df.iloc[:, -1].tolist()
 
 test_ids = test_df.iloc[:, 0].tolist()
 test_sentences = test_df.iloc[:, 1].tolist()
@@ -79,7 +74,6 @@ valid_ids = val_df.iloc[:, 0].tolist()
 valid_sentences = val_df.iloc[:, 1].tolist()
 valid_scores = val_df.iloc[:, -1].tolist()
 
-# Clean the sentences
 train_sentences_clean = [sentence_preprocessing(sentence) for sentence in train_sentences]
 test_sentences_clean = [sentence_preprocessing(sentence) for sentence in test_sentences]
 validation_sentences_clean = [sentence_preprocessing(sentence) for sentence in valid_sentences]
@@ -96,7 +90,23 @@ brown_freq_dist = nltk.FreqDist(brown_words)
 total_brown_words = len(brown_words)
 stop_words = set(stopwords.words('english'))
 
-def get_word_rarity(sentences):
+def ExtractFeatures(sentences):
+    features = {
+        'word_rarity': WordRarity(sentences),
+        'adjective_count': AdjectiveCount(sentences),
+        'adverb_count': AdverbCount(sentences)
+    }
+    return features
+
+def CharacterCount(sentences):
+    character_count = []
+    for sentence in sentences:
+        removed_punctuation = re.sub(r'[^\w\s]', '', sentence)
+        removed_spaces = re.sub(r'\s', '', removed_punctuation)
+        character_count.append(len(removed_spaces))
+    return np.array(character_count).reshape(-1, 1)
+
+def WordRarity(sentences):
     word_rarity = []
     for sentence in sentences:
         sentence_rarity = []
@@ -106,28 +116,27 @@ def get_word_rarity(sentences):
         word_rarity.append(np.mean(sentence_rarity) if sentence_rarity else 0)
     return np.array(word_rarity).reshape(-1, 1)
 
-
-def get_adjective_count(sentences):
+def AdjectiveCount(sentences):
     adjective_count = []  
     for sentence in sentences:
         count = 0
         for word in word_tokenize(sentence):
             if any(synset.pos() == 'a' for synset in wn.synsets(word)):
-                print(word)
                 count += 1
         adjective_count.append(count)
-        print(sentence, count)
     return np.array(adjective_count).reshape(-1, 1)
 
-
-def get_parse_tree_depth(sentences):
-    tree_depth = []
+def NounCount(sentences):
+    noun_count = []
     for sentence in sentences:
-        tree = Tree.fromstring(sentence)
-        tree_depth.append(tree.height())
-    return np.array(tree_depth).reshape(-1, 1)
+        count = 0
+        for word in word_tokenize(sentence):
+            if any(synset.pos() == 'n' for synset in wn.synsets(word)):
+                count += 1
+        noun_count.append(count)
+    return np.array(noun_count).reshape(-1, 1)
 
-def get_color_count(sentences):
+def ColorCount(sentences):
     colors_count = []
     for sentence in sentences:
         count = 0
@@ -137,7 +146,13 @@ def get_color_count(sentences):
         colors_count.append(count)
     return np.array(colors_count).reshape(-1, 1)
 
-def get_prepositions_count(sentences):
+def WordLengthRatio(sentences):
+    word_length_ratio = []
+    for sentence in sentences:
+        word_length_ratio.append(textstat.avg_letter_per_word(sentence))
+    return np.array(word_length_ratio).reshape(-1, 1)
+
+def PrepositionsCount(sentences):
     prepositions_count = []
     for sentence in sentences:
         count = 0
@@ -147,36 +162,54 @@ def get_prepositions_count(sentences):
         prepositions_count.append(count)
     return np.array(prepositions_count).reshape(-1, 1)
 
+def DescriptivePositioning(sentences):
+    position_count = []
+    for sentence in sentences:
+        count = 0
+        for word in word_tokenize(sentence):
+            if word in position_words:
+                count += 1
+        position_count.append(count)
+    return np.array(position_count).reshape(-1, 1)
 
-X_train_features = np.hstack([
-    get_word_rarity(train_sentences),
-    get_adjective_count(train_sentences),
-    get_color_count(train_sentences),
-])
+def ParseTreeDepth(sentences):
+    tree_depth = []
+    for sentence in sentences:
+        tree = Tree.fromstring(sentence)
+        tree_depth.append(tree.height())
+    return np.array(tree_depth).reshape(-1, 1)
 
-X_test_features = np.hstack([
-    get_word_rarity(test_sentences),
-    get_adjective_count(test_sentences),
-    get_color_count(test_sentences),
-])
+def VerbCount(sentences):
+    verb_count = []
+    for sentence in sentences:
+        count = 0
+        for word in word_tokenize(sentence):
+            if any(synset.pos() == 'v' for synset in wn.synsets(word)):
+                count += 1
+        verb_count.append(count)
+    return np.array(verb_count).reshape(-1, 1)
 
-X_valid_features = np.hstack([
-    get_word_rarity(valid_sentences),
-    get_adjective_count(valid_sentences),
-    get_color_count(valid_sentences),
-])
+def AdverbCount(sentences):
+    adverb_count = []
+    for sentence in sentences:
+        count = 0
+        for word in word_tokenize(sentence):
+            if any(synset.pos() == 'r' for synset in wn.synsets(word)):
+                count += 1
+        adverb_count.append(count)
+    return np.array(adverb_count).reshape(-1, 1)
 
-train_features_df = pd.DataFrame(X_train_features, columns=[ 
-    'word_rarity', 'adjective_count', 'color_count'
-])
+train_features = ExtractFeatures(train_sentences_clean)
+test_features = ExtractFeatures(test_sentences_clean)
+valid_features = ExtractFeatures(validation_sentences_clean)
 
-test_features_df = pd.DataFrame(X_test_features, columns=[ 
-    'word_rarity', 'adjective_count', 'color_count'
-])
+X_train_features = np.hstack([train_features[feature] for feature in train_features])
+X_test_features = np.hstack([test_features[feature] for feature in test_features])
+X_valid_features = np.hstack([valid_features[feature] for feature in valid_features])
 
-valid_features_df = pd.DataFrame(X_valid_features, columns=[
-    'word_rarity', 'adjective_count', 'color_count'
-])
+train_features_df = pd.DataFrame(X_train_features, columns=train_features.keys())
+test_features_df = pd.DataFrame(X_test_features, columns=test_features.keys())
+valid_features_df = pd.DataFrame(X_valid_features, columns=valid_features.keys())
 
 plotting_of_featuresDF = pd.concat([train_features_df, train_scores_df], axis = 1)
 axis = sns.pairplot(data = plotting_of_featuresDF, plot_kws = dict(color = "maroon"))
@@ -192,17 +225,17 @@ plt.show()
 train_features_df['sentence'] = train_sentences_clean
 train_features_df['sentence_id'] = train_ids
 
-test_features_df['sentence'] = test_sentences_clean
-test_features_df['sentence_id'] = test_ids
+# test_features_df['sentence'] = test_sentences_clean
+# test_features_df['sentence_id'] = test_ids
 
-valid_features_df['sentence'] = validation_sentences_clean
-valid_features_df['sentence_id'] = valid_ids
+# valid_features_df['sentence'] = validation_sentences_clean
+# valid_features_df['sentence_id'] = valid_ids
 
 print("Training Features Table:")
 print(train_features_df.head())
 
-print("\nValidation Features Table:")
-print(valid_features_df.head())
+# print("\nValidation Features Table:")
+# print(valid_features_df.head())
 
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5, min_df=5, stop_words="english")
 
@@ -219,16 +252,9 @@ X_train_combined = np.hstack([X_train_features, X_train_tfidf.toarray()])
 X_test_combined = np.hstack([X_test_features, X_test_tfidf.toarray()])
 X_valid_combined = np.hstack([X_valid_features, X_valid_tfidf.toarray()])
 
-# Create Pipeline
-GBR_pipeline = Pipeline(
-    steps=[
-        ("scaler", StandardScaler(with_mean=True)),  # Scale numerical features
-        ("regressor", GradientBoostingRegressor(n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42, verbose=1)),
-    ]
-)
-
 X_train, X_test, y_train, y_test = train_test_split(X_train_combined, train_scores, test_size=0.2, random_state=42)
 
+GBR_pipeline = Pipeline(steps = [("scaler", StandardScaler(with_mean=True)), ("regressor", GradientBoostingRegressor(n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42, verbose=1))])
 GBR_pipeline.fit(X_train, y_train)
 
 train_score = GBR_pipeline.score(X_train, y_train)
@@ -242,6 +268,13 @@ spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_GBR)
 print(f"Spearman Correlation: {spearman_corr}")
 print(f"P-value: {p_value}")
 
+test_predictions_GBR = GBR_pipeline.predict(X_test_combined)
+
+GBR_predictions_df = pd.DataFrame({
+    "id": test_ids,
+    "score": test_predictions_GBR
+})
+GBR_predictions_df.to_csv("GBR_predictions.csv", index=False)
 
 bayesianRidge = linear_model.BayesianRidge(verbose=1)
 bayesianRidge.fit(X_train, y_train)
@@ -250,3 +283,11 @@ valid_predictions_bayesian = bayesianRidge.predict(X_valid_combined)
 spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_bayesian)
 print(f"Spearman Correlation: {spearman_corr}")
 print(f"P-value: {p_value}")
+
+test_predictions_bayesian = bayesianRidge.predict(X_test_combined)
+
+Bayesian_predictions_df = pd.DataFrame({
+    "id": test_ids,
+    "score": test_predictions_bayesian
+})
+Bayesian_predictions_df.to_csv("bayesianRidge_predictions.csv", index=False)
