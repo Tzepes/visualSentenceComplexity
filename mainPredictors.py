@@ -19,6 +19,9 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
+import xgboost as xg
+from gensim.models import Word2Vec
+
 from sklearn import linear_model
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -53,16 +56,6 @@ stop_words = set(stopwords.words('english'))
 
 lemmatizer = WordNetLemmatizer()
 
-def sentence_preprocessing(sentence):
-    sentence = sentence.lower()
-    sentence = re.sub('[^a-zA-Z]', ' ', sentence)
-
-    words = nltk.word_tokenize(sentence)
-    words = [word for word in words if word not in stopwords.words("english")]
-    words = [lemmatizer.lemmatize(word) for word in words]
-
-    return " ".join(words)
-
 train_ids = train_df.iloc[:, 0].tolist()
 train_sentences = train_df.iloc[:, 1].tolist()
 train_scores = train_df.iloc[:, -1].tolist()
@@ -73,6 +66,29 @@ test_sentences = test_df.iloc[:, 1].tolist()
 valid_ids = val_df.iloc[:, 0].tolist()
 valid_sentences = val_df.iloc[:, 1].tolist()
 valid_scores = val_df.iloc[:, -1].tolist()
+
+def sentence_preprocessing(sentence):
+    sentence = sentence.lower()
+    sentence = re.sub('[^a-zA-Z]', ' ', sentence)
+
+    words = nltk.word_tokenize(sentence)
+    # words = [word for word in words if word not in stopwords.words("english")]
+    words = [word for word in words if word not in stop_words]
+    words = [lemmatizer.lemmatize(word) for word in words]
+
+    return " ".join(words)
+
+def w2v_preprocessing(sentence): # lemmatizer gets removed because it takes away context for w2v
+    sentence = sentence.lower()
+    sentence = re.sub('[^a-zA-Z]', ' ', sentence)
+    
+    words = nltk.word_tokenize(sentence)
+    filtered_words = [word for word in words if word not in stop_words]
+    return filtered_words
+
+w2v_trainSentences_clean = [w2v_preprocessing(sentence) for sentence in train_sentences]
+w2v_testSentences_clean = [w2v_preprocessing(sentence) for sentence in test_sentences]
+w2v_valSentences_clean = [w2v_preprocessing(sentence) for sentence in valid_sentences]
 
 train_sentences_clean = [sentence_preprocessing(sentence) for sentence in train_sentences]
 test_sentences_clean = [sentence_preprocessing(sentence) for sentence in test_sentences]
@@ -243,18 +259,19 @@ X_train_tfidf = vectorizer.fit_transform(train_sentences)
 X_test_tfidf = vectorizer.transform(test_sentences)
 X_valid_tfidf = vectorizer.transform(valid_sentences)
 
-# Convert sparse matrix to DataFrame for visualization
-# tfidf_df = pd.DataFrame(X_train_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
-# Save tfidf_df to a CSV file
-# tfidf_df.to_csv("tfidfData.csv", index=False)
+X_Comb_TrainTFIDF = np.hstack([X_train_features, X_train_tfidf.toarray()])
+X_Comb_TestTFIDF = np.hstack([X_test_features, X_test_tfidf.toarray()])
+X_Comb_ValidTFIDF = np.hstack([X_valid_features, X_valid_tfidf.toarray()])
 
-X_train_combined = np.hstack([X_train_features, X_train_tfidf.toarray()])
-X_test_combined = np.hstack([X_test_features, X_test_tfidf.toarray()])
-X_valid_combined = np.hstack([X_valid_features, X_valid_tfidf.toarray()])
 
-X_train, X_test, y_train, y_test = train_test_split(X_train_combined, train_scores, test_size=0.2, random_state=42)
+tfidf_df = pd.DataFrame(X_train_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
+tfidf_df.to_csv("tfidfData.csv", index=False)
 
-GBR_pipeline = Pipeline(steps = [("scaler", StandardScaler(with_mean=True)), ("regressor", GradientBoostingRegressor(n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42, verbose=1))])
+X_train, X_test, y_train, y_test = train_test_split(X_Comb_TrainTFIDF, train_scores, test_size=0.2, random_state=42)
+
+scaler = StandardScaler() #turn mean = true if needed
+
+GBR_pipeline = Pipeline(steps = [("scaler", scaler), ("regressor", GradientBoostingRegressor(n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42, verbose=1))])
 GBR_pipeline.fit(X_train, y_train)
 
 train_score = GBR_pipeline.score(X_train, y_train)
@@ -263,12 +280,12 @@ test_score = GBR_pipeline.score(X_test, y_test)
 print(f"Train score: {train_score}")
 print(f"Test score: {test_score}")
 
-valid_predictions_GBR = GBR_pipeline.predict(X_valid_combined)
+valid_predictions_GBR = GBR_pipeline.predict(X_Comb_ValidTFIDF)
 spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_GBR)
 print(f"Spearman Correlation: {spearman_corr}")
 print(f"P-value: {p_value}")
 
-test_predictions_GBR = GBR_pipeline.predict(X_test_combined)
+test_predictions_GBR = GBR_pipeline.predict(X_Comb_TestTFIDF)
 
 GBR_predictions_df = pd.DataFrame({
     "id": test_ids,
@@ -276,18 +293,74 @@ GBR_predictions_df = pd.DataFrame({
 })
 GBR_predictions_df.to_csv("GBR_predictions.csv", index=False)
 
+
+
 bayesianRidge = linear_model.BayesianRidge(verbose=1)
 bayesianRidge.fit(X_train, y_train)
 
-valid_predictions_bayesian = bayesianRidge.predict(X_valid_combined)
+valid_predictions_bayesian = bayesianRidge.predict(X_Comb_ValidTFIDF)
 spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_bayesian)
 print(f"Spearman Correlation: {spearman_corr}")
 print(f"P-value: {p_value}")
 
-test_predictions_bayesian = bayesianRidge.predict(X_test_combined)
+test_predictions_bayesian = bayesianRidge.predict(X_Comb_TestTFIDF)
 
 Bayesian_predictions_df = pd.DataFrame({
     "id": test_ids,
     "score": test_predictions_bayesian
 })
 Bayesian_predictions_df.to_csv("bayesianRidge_predictions.csv", index=False)
+
+
+w2vVectorizer = Word2Vec(sentences = w2v_trainSentences_clean, vector_size=100, window=5, min_count=1, workers=4, epochs=100)
+
+def sentence_to_vec(sentences, model):
+    sentences_vectors = []
+    for sentence in sentences:
+        word_vectors = [model.wv[word] for word in sentence if word in model.wv]
+        if len(word_vectors) > 0:
+            sentence_vector = np.mean(word_vectors, axis=0)
+        else:
+            sentence_vector = np.zeros(model.vector_size)
+        sentences_vectors.append(sentence_vector)
+    return np.array(sentences_vectors)
+
+X_train_w2v = sentence_to_vec(w2v_trainSentences_clean, w2vVectorizer)
+y_train_w2v = train_scores
+
+X_valid_w2v = sentence_to_vec(w2v_valSentences_clean, w2vVectorizer)
+y_valid_w2v = valid_scores
+
+X_test_w2v = sentence_to_vec(w2v_testSentences_clean, w2vVectorizer)
+
+X_train_w2v = scaler.fit_transform(X_train_w2v)
+X_valid_w2v = scaler.transform(X_valid_w2v)
+X_test_w2v = scaler.transform(X_test_w2v)
+
+XGB_Regressor = xg.XGBRegressor(objective='reg:squarederror', n_estimators=500, learning_rate=0.1, max_depth=3, random_state=42)
+# XGB_Regressor = xg.XGBRegressor(
+#     objective='reg:squarederror',
+#     n_estimators=100,
+#     learning_rate=0.01,
+#     max_depth=5,
+#     subsample=0.7,
+#     colsample_bytree=0.7,
+#     random_state=42,
+#     n_jobs=-1
+# )
+
+XGB_Regressor.fit(X_train_w2v, y_train_w2v)
+
+valid_predictions_XGB = XGB_Regressor.predict(X_valid_w2v)
+spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_XGB)
+
+print(f"Spearman Correlation: {spearman_corr}")
+print(f"P-value: {p_value}")
+
+test_predictions_XGB = XGB_Regressor.predict(X_test_w2v)
+
+XGB_predictions_df = pd.DataFrame({
+    "id": test_ids,
+    "score": test_predictions_XGB
+})
+XGB_predictions_df.to_csv("XGB_predictions.csv", index=False)
