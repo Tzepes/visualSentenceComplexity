@@ -67,24 +67,35 @@ valid_ids = val_df.iloc[:, 0].tolist()
 valid_sentences = val_df.iloc[:, 1].tolist()
 valid_scores = val_df.iloc[:, -1].tolist()
 
+def remove_stopwords(words_token):
+    for word in words_token:
+        if word in stop_words:
+            words_token.remove(word)
+    return words_token
+
+def lemmetizer(words_token):
+    words_lemm = []
+    for word in words_token:
+        words_lemm.append(lemmatizer.lemmatize(word))
+    return words_lemm
+
 def sentence_preprocessing(sentence):
     sentence = sentence.lower()
     sentence = re.sub('[^a-zA-Z]', ' ', sentence)
 
     words = nltk.word_tokenize(sentence)
-    # words = [word for word in words if word not in stopwords.words("english")]
-    words = [word for word in words if word not in stop_words]
-    words = [lemmatizer.lemmatize(word) for word in words]
+    words = remove_stopwords(words)
+    words_lemm = lemmetizer(words)
 
-    return " ".join(words)
+    return " ".join(words_lemm)
 
 def w2v_preprocessing(sentence): # lemmatizer gets removed because it takes away context for w2v
     sentence = sentence.lower()
     sentence = re.sub('[^a-zA-Z]', ' ', sentence)
     
     words = nltk.word_tokenize(sentence)
-    filtered_words = [word for word in words if word not in stop_words]
-    return filtered_words
+    words = remove_stopwords(words)
+    return words
 
 w2v_trainSentences_clean = [w2v_preprocessing(sentence) for sentence in train_sentences]
 w2v_testSentences_clean = [w2v_preprocessing(sentence) for sentence in test_sentences]
