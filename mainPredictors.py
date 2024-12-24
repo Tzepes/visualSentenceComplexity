@@ -97,13 +97,13 @@ def w2v_preprocessing(sentence): # lemmatizer gets removed because it takes away
     words = remove_stopwords(words)
     return words
 
-w2v_trainSentences_clean = [w2v_preprocessing(sentence) for sentence in train_sentences]
-w2v_testSentences_clean = [w2v_preprocessing(sentence) for sentence in test_sentences]
-w2v_valSentences_clean = [w2v_preprocessing(sentence) for sentence in valid_sentences]
-
 train_sentences_clean = [sentence_preprocessing(sentence) for sentence in train_sentences]
 test_sentences_clean = [sentence_preprocessing(sentence) for sentence in test_sentences]
 validation_sentences_clean = [sentence_preprocessing(sentence) for sentence in valid_sentences]
+
+w2v_trainSentences_clean = [w2v_preprocessing(sentence) for sentence in train_sentences]
+w2v_testSentences_clean = [w2v_preprocessing(sentence) for sentence in test_sentences]
+w2v_valSentences_clean = [w2v_preprocessing(sentence) for sentence in valid_sentences]
 
 train_ids_df = pd.DataFrame(train_ids, columns=['train_ids'])
 train_sentences_df = pd.DataFrame(train_sentences_clean, columns=['train_sentences'])
@@ -121,7 +121,10 @@ def ExtractFeatures(sentences):
     features = {
         'word_rarity': WordRarity(sentences),
         'adjective_count': AdjectiveCount(sentences),
-        'adverb_count': AdverbCount(sentences)
+        'adverb_count': AdverbCount(sentences),
+        'color_count': ColorCount(sentences),
+        'word_length_ratio': WordLengthRatio(sentences),
+        'descriptive_positioning': DescriptivePositioning(sentences)
     }
     return features
 
@@ -199,12 +202,12 @@ def DescriptivePositioning(sentences):
         position_count.append(count)
     return np.array(position_count).reshape(-1, 1)
 
-def ParseTreeDepth(sentences):
-    tree_depth = []
-    for sentence in sentences:
-        tree = Tree.fromstring(sentence)
-        tree_depth.append(tree.height())
-    return np.array(tree_depth).reshape(-1, 1)
+# def ParseTreeDepth(sentences):
+#     tree_depth = []
+#     for sentence in sentences:
+#         tree = Tree.fromstring(sentence)
+#         tree_depth.append(tree.height())
+#     return np.array(tree_depth).reshape(-1, 1)
 
 def VerbCount(sentences):
     verb_count = []
@@ -288,13 +291,14 @@ GBR_pipeline.fit(X_train, y_train)
 train_score = GBR_pipeline.score(X_train, y_train)
 test_score = GBR_pipeline.score(X_test, y_test)
 
+print("Gradient Boosting Regressor Results:")
 print(f"Train score: {train_score}")
 print(f"Test score: {test_score}")
 
 valid_predictions_GBR = GBR_pipeline.predict(X_Comb_ValidTFIDF)
 spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_GBR)
 print(f"Spearman Correlation: {spearman_corr}")
-print(f"P-value: {p_value}")
+print(f"P-value: {p_value}", end="\n\n")
 
 test_predictions_GBR = GBR_pipeline.predict(X_Comb_TestTFIDF)
 
@@ -311,8 +315,9 @@ bayesianRidge.fit(X_train, y_train)
 
 valid_predictions_bayesian = bayesianRidge.predict(X_Comb_ValidTFIDF)
 spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_bayesian)
+print("Bayesian Ridge Results:")
 print(f"Spearman Correlation: {spearman_corr}")
-print(f"P-value: {p_value}")
+print(f"P-value: {p_value}", end="\n\n")
 
 test_predictions_bayesian = bayesianRidge.predict(X_Comb_TestTFIDF)
 
@@ -365,6 +370,7 @@ XGB_Regressor.fit(X_train_w2v, y_train_w2v)
 valid_predictions_XGB = XGB_Regressor.predict(X_valid_w2v)
 spearman_corr, p_value = spearmanr(valid_scores, valid_predictions_XGB)
 
+print("XGBoost Regressor Results:")
 print(f"Spearman Correlation: {spearman_corr}")
 print(f"P-value: {p_value}")
 
