@@ -1,19 +1,16 @@
 import numpy as np
 import pandas as pd
-import nltk
 import re
 import textstat
 import seaborn as sns
 from enum import Enum
-
 from scipy.stats import spearmanr
 
+import nltk
 from nltk.corpus import stopwords, wordnet as wn
+from nltk.corpus import brown
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
-from nltk.corpus import brown
-from nltk.tokenize import word_tokenize
-import numpy as np
 
 import matplotlib.pyplot as plt
 
@@ -42,10 +39,10 @@ from corpus_data.positioning_corpus import position_words
 
 stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
+
 brown_words = brown.words()
 brown_freq_dist = nltk.FreqDist(brown_words)
 total_brown_words = len(brown_words)
-stop_words = set(stopwords.words('english'))
 
 train_df = pd.read_csv("./data/train.csv")
 test_df = pd.read_csv("./data/test.csv")
