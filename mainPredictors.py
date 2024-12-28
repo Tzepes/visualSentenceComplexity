@@ -41,11 +41,6 @@ from corpus_data.wordsOfNums_corpus import words_of_numbers
 from corpus_data.prepositions_corpus import prepositions
 from corpus_data.positioning_corpus import position_words
 
-train_df = pd.read_csv("./data/train.csv")
-test_df = pd.read_csv("./data/test.csv")
-val_df = pd.read_csv("./data/val.csv")
-
-
 # nltk.download('punkt_tab')
 # nltk.download("stopwords")
 # nltk.download('punkt')
@@ -55,19 +50,26 @@ val_df = pd.read_csv("./data/val.csv")
 # nltk.download('averaged_perceptron_tagger_eng')
 
 stop_words = set(stopwords.words('english'))
-
 lemmatizer = WordNetLemmatizer()
+brown_words = brown.words()
+brown_freq_dist = nltk.FreqDist(brown_words)
+total_brown_words = len(brown_words)
+stop_words = set(stopwords.words('english'))
 
-train_ids = train_df.iloc[:, 0].tolist()
-train_sentences = train_df.iloc[:, 1].tolist()
-train_scores = train_df.iloc[:, -1].tolist()
+train_df = pd.read_csv("./data/train.csv")
+test_df = pd.read_csv("./data/test.csv")
+val_df = pd.read_csv("./data/val.csv")
 
-test_ids = test_df.iloc[:, 0].tolist()
-test_sentences = test_df.iloc[:, 1].tolist()
+train_ids = train_df['id'].tolist()
+train_sentences = train_df['text'].tolist()
+train_scores = train_df['score'].tolist()
 
-valid_ids = val_df.iloc[:, 0].tolist()
-valid_sentences = val_df.iloc[:, 1].tolist()
-valid_scores = val_df.iloc[:, -1].tolist()
+test_ids = test_df['id'].tolist()
+test_sentences = test_df['text'].tolist()
+
+valid_ids = val_df['id'].tolist()
+valid_sentences = val_df['text'].tolist()
+valid_scores = val_df['score'].tolist()
 
 def remove_stopwords(words_token):
     for word in words_token:
@@ -93,6 +95,17 @@ def sentence_preprocessing(sentence, lemmetizing=True):
         return " ".join(words)
     else:
         return words
+    
+def sentence_to_vec(sentences, model):
+    sentences_vectors = []
+    for sentence in sentences:
+        word_vectors = [model.wv[word] for word in sentence if word in model.wv]
+        if len(word_vectors) > 0:
+            sentence_vector = np.mean(word_vectors, axis=0)
+        else:
+            sentence_vector = np.zeros(model.vector_size)
+        sentences_vectors.append(sentence_vector)
+    return np.array(sentences_vectors)
 
 train_sentences_clean = [sentence_preprocessing(sentence) for sentence in train_sentences]
 test_sentences_clean = [sentence_preprocessing(sentence) for sentence in test_sentences]
@@ -108,22 +121,6 @@ train_scores_df = pd.DataFrame(train_scores, columns=['train_scores'])
 
 valid_ids_df = pd.DataFrame(valid_ids, columns=['valid_ids'])
 valid_sentences_df = pd.DataFrame(validation_sentences_clean, columns=['valid_sentences'])
-
-brown_words = brown.words()
-brown_freq_dist = nltk.FreqDist(brown_words)
-total_brown_words = len(brown_words)
-stop_words = set(stopwords.words('english'))
-
-def ExtractFeatures(sentences):
-    features = {
-        'word_rarity': WordRarity(sentences),
-        'adjective_count': PartOfSpeech_Labels(sentences, PoS.ADJECTIVES),
-        'adverb_count': PartOfSpeech_Labels(sentences, PoS.ADVERBS),
-        'color_count': ColorCount(sentences),
-        'word_length_ratio': WordLengthRatio(sentences),
-        'descriptive_positioning': DescriptivePositioning(sentences)
-    }
-    return features
 
 def CharacterCount(sentences):
     character_count = []
@@ -206,6 +203,17 @@ def DescriptivePositioning(sentences):
         position_count.append(count)
     return np.array(position_count).reshape(-1, 1)
 
+def ExtractFeatures(sentences):
+    features = {
+        'word_rarity': WordRarity(sentences),
+        'adjective_count': PartOfSpeech_Labels(sentences, PoS.ADJECTIVES),
+        'adverb_count': PartOfSpeech_Labels(sentences, PoS.ADVERBS),
+        'color_count': ColorCount(sentences),
+        'word_length_ratio': WordLengthRatio(sentences),
+        'descriptive_positioning': DescriptivePositioning(sentences)
+    }
+    return features
+
 train_features = ExtractFeatures(train_sentences_clean)
 test_features = ExtractFeatures(test_sentences_clean)
 valid_features = ExtractFeatures(validation_sentences_clean)
@@ -217,17 +225,6 @@ X_valid_features = np.hstack([valid_features[feature] for feature in valid_featu
 train_features_df = pd.DataFrame(X_train_features, columns=train_features.keys())
 test_features_df = pd.DataFrame(X_test_features, columns=test_features.keys())
 valid_features_df = pd.DataFrame(X_valid_features, columns=valid_features.keys())
-
-plotting_of_featuresDF = pd.concat([train_features_df, train_scores_df], axis = 1)
-axis = sns.pairplot(data = plotting_of_featuresDF, plot_kws = dict(color = "maroon"))
-plt.show()
-
-train_features_df['train_scores'] = train_scores
-featureCorrelation = train_features_df.corr()
-sns.heatmap(featureCorrelation, annot = True, cmap = 'Blues', linewidths = 1,
-           annot_kws = {"weight": "bold", "fontsize": 10})
-plt.figure(figsize = (10, 10))
-plt.show()
 
 train_features_df['sentence'] = train_sentences_clean
 train_features_df['sentence_id'] = train_ids
@@ -244,6 +241,19 @@ print(train_features_df.head())
 # print("\nValidation Features Table:")
 # print(valid_features_df.head())
 
+#exclude non-numeric columns for correlation matrix
+numeric_train_features_df = train_features_df.select_dtypes(include=[np.number])
+
+plotting_of_featuresDF = pd.concat([numeric_train_features_df, train_scores_df], axis = 1)
+axis = sns.pairplot(data = plotting_of_featuresDF, plot_kws = dict(color = "maroon"))
+plt.show()
+
+numeric_train_features_df['train_scores'] = train_scores
+featureCorrelation = numeric_train_features_df.corr()
+sns.heatmap(featureCorrelation, annot=True, cmap='Blues', linewidths=1, annot_kws={"weight": "bold", "fontsize": 10})
+plt.figure(figsize=(10, 10))
+plt.show()
+
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5, min_df=5, stop_words="english")
 
 X_train_tfidf = vectorizer.fit_transform(train_sentences)
@@ -253,7 +263,6 @@ X_valid_tfidf = vectorizer.transform(valid_sentences)
 X_Comb_TrainTFIDF = np.hstack([X_train_features, X_train_tfidf.toarray()])
 X_Comb_TestTFIDF = np.hstack([X_test_features, X_test_tfidf.toarray()])
 X_Comb_ValidTFIDF = np.hstack([X_valid_features, X_valid_tfidf.toarray()])
-
 
 tfidf_df = pd.DataFrame(X_train_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
 tfidf_df.to_csv("tfidfData.csv", index=False)
@@ -306,17 +315,6 @@ Bayesian_predictions_df.to_csv("bayesianRidge_predictions.csv", index=False)
 
 
 w2vVectorizer = Word2Vec(sentences = w2v_trainSentences_clean, vector_size=100, window=5, min_count=1, workers=4, epochs=100)
-
-def sentence_to_vec(sentences, model):
-    sentences_vectors = []
-    for sentence in sentences:
-        word_vectors = [model.wv[word] for word in sentence if word in model.wv]
-        if len(word_vectors) > 0:
-            sentence_vector = np.mean(word_vectors, axis=0)
-        else:
-            sentence_vector = np.zeros(model.vector_size)
-        sentences_vectors.append(sentence_vector)
-    return np.array(sentences_vectors)
 
 X_train_w2v = sentence_to_vec(w2v_trainSentences_clean, w2vVectorizer)
 y_train_w2v = train_scores
