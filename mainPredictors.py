@@ -79,31 +79,26 @@ def lemmetizer(words_token):
         words_lemm.append(lemmatizer.lemmatize(word))
     return words_lemm
 
-def sentence_preprocessing(sentence):
+def sentence_preprocessing(sentence, lemmetizing=True):
     sentence = sentence.lower()
     sentence = re.sub('[^a-zA-Z]', ' ', sentence)
 
     words = nltk.word_tokenize(sentence)
     words = remove_stopwords(words)
-    words_lemm = lemmetizer(words)
 
-    return " ".join(words_lemm)
-
-def w2v_preprocessing(sentence): # lemmatizer gets removed because it takes away context for w2v
-    sentence = sentence.lower()
-    sentence = re.sub('[^a-zA-Z]', ' ', sentence)
-    
-    words = nltk.word_tokenize(sentence)
-    words = remove_stopwords(words)
-    return words
+    if lemmetizing: 
+        words = lemmetizer(words)
+        return " ".join(words)
+    else:
+        return words
 
 train_sentences_clean = [sentence_preprocessing(sentence) for sentence in train_sentences]
 test_sentences_clean = [sentence_preprocessing(sentence) for sentence in test_sentences]
 validation_sentences_clean = [sentence_preprocessing(sentence) for sentence in valid_sentences]
 
-w2v_trainSentences_clean = [w2v_preprocessing(sentence) for sentence in train_sentences]
-w2v_testSentences_clean = [w2v_preprocessing(sentence) for sentence in test_sentences]
-w2v_valSentences_clean = [w2v_preprocessing(sentence) for sentence in valid_sentences]
+w2v_trainSentences_clean = [sentence_preprocessing(sentence, lemmetizing=False) for sentence in train_sentences]
+w2v_testSentences_clean = [sentence_preprocessing(sentence, lemmetizing=False) for sentence in test_sentences]
+w2v_valSentences_clean = [sentence_preprocessing(sentence, lemmetizing=False) for sentence in valid_sentences]
 
 train_ids_df = pd.DataFrame(train_ids, columns=['train_ids'])
 train_sentences_df = pd.DataFrame(train_sentences_clean, columns=['train_sentences'])
