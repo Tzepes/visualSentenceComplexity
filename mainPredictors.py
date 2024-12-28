@@ -5,6 +5,8 @@ import nltk
 import re
 import textstat
 import seaborn as sns
+from enum import Enum
+
 from scipy.stats import spearmanr
 
 from nltk.corpus import stopwords, wordnet as wn
@@ -115,8 +117,8 @@ stop_words = set(stopwords.words('english'))
 def ExtractFeatures(sentences):
     features = {
         'word_rarity': WordRarity(sentences),
-        'adjective_count': AdjectiveCount(sentences),
-        'adverb_count': AdverbCount(sentences),
+        'adjective_count': PartOfSpeech_Labels(sentences, PoS.ADJECTIVES),
+        'adverb_count': PartOfSpeech_Labels(sentences, PoS.ADVERBS),
         'color_count': ColorCount(sentences),
         'word_length_ratio': WordLengthRatio(sentences),
         'descriptive_positioning': DescriptivePositioning(sentences)
@@ -141,25 +143,32 @@ def WordRarity(sentences):
         word_rarity.append(np.mean(sentence_rarity) if sentence_rarity else 0)
     return np.array(word_rarity).reshape(-1, 1)
 
-def AdjectiveCount(sentences):
-    adjective_count = []  
-    for sentence in sentences:
-        count = 0
-        for word in word_tokenize(sentence):
-            if any(synset.pos() == 'a' for synset in wn.synsets(word)):
-                count += 1
-        adjective_count.append(count)
-    return np.array(adjective_count).reshape(-1, 1)
+class PoS(Enum):
+    NOUNS = "nouns"
+    ADJECTIVES = "adjectives"
+    VERBS = "verbs"
+    ADVERBS = "adverbs"
 
-def NounCount(sentences):
-    noun_count = []
+def PartOfSpeech_Labels(sentences, pos_tags):
+    pos_count = []
     for sentence in sentences:
         count = 0
         for word in word_tokenize(sentence):
-            if any(synset.pos() == 'n' for synset in wn.synsets(word)):
-                count += 1
-        noun_count.append(count)
-    return np.array(noun_count).reshape(-1, 1)
+            match pos_tags:
+                case PoS.NOUNS:
+                    if any(synset.pos() == 'n' for synset in wn.synsets(word)):
+                        count += 1
+                case PoS.ADJECTIVES:
+                    if any(synset.pos() == 'a' for synset in wn.synsets(word)):
+                        count += 1
+                case PoS.VERBS:
+                    if any(synset.pos() == 'v' for synset in wn.synsets(word)):
+                        count += 1
+                case PoS.ADVERBS:
+                    if any(synset.pos() == 'r' for synset in wn.synsets(word)):
+                        count += 1
+        pos_count.append(count)
+    return np.array(pos_count).reshape(-1, 1)
 
 def ColorCount(sentences):
     colors_count = []
@@ -196,33 +205,6 @@ def DescriptivePositioning(sentences):
                 count += 1
         position_count.append(count)
     return np.array(position_count).reshape(-1, 1)
-
-# def ParseTreeDepth(sentences):
-#     tree_depth = []
-#     for sentence in sentences:
-#         tree = Tree.fromstring(sentence)
-#         tree_depth.append(tree.height())
-#     return np.array(tree_depth).reshape(-1, 1)
-
-def VerbCount(sentences):
-    verb_count = []
-    for sentence in sentences:
-        count = 0
-        for word in word_tokenize(sentence):
-            if any(synset.pos() == 'v' for synset in wn.synsets(word)):
-                count += 1
-        verb_count.append(count)
-    return np.array(verb_count).reshape(-1, 1)
-
-def AdverbCount(sentences):
-    adverb_count = []
-    for sentence in sentences:
-        count = 0
-        for word in word_tokenize(sentence):
-            if any(synset.pos() == 'r' for synset in wn.synsets(word)):
-                count += 1
-        adverb_count.append(count)
-    return np.array(adverb_count).reshape(-1, 1)
 
 train_features = ExtractFeatures(train_sentences_clean)
 test_features = ExtractFeatures(test_sentences_clean)
