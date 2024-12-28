@@ -1,4 +1,3 @@
-import csv
 import numpy as np
 import pandas as pd
 import nltk
@@ -11,14 +10,11 @@ from scipy.stats import spearmanr
 
 from nltk.corpus import stopwords, wordnet as wn
 from nltk.stem import WordNetLemmatizer
-from nltk.tokenize import word_tokenize, sent_tokenize
-from nltk import pos_tag, Tree
+from nltk.tokenize import word_tokenize
 from nltk.corpus import brown
 from nltk.tokenize import word_tokenize
-from nltk import pos_tag
 import numpy as np
 
-import matplotlib
 import matplotlib.pyplot as plt
 
 import xgboost as xg
@@ -32,12 +28,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.svm import SVR
 from sklearn.model_selection import train_test_split
 
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout
-
 from corpus_data.colors_corpus import color_words
-from corpus_data.wordsOfNums_corpus import words_of_numbers
 from corpus_data.prepositions_corpus import prepositions
 from corpus_data.positioning_corpus import position_words
 
