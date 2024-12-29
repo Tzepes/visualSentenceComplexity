@@ -7,8 +7,7 @@ from enum import Enum
 from scipy.stats import spearmanr
 
 import nltk
-from nltk.corpus import stopwords, wordnet as wn
-from nltk.corpus import brown
+from nltk.corpus import stopwords, brown, wordnet as wn
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
